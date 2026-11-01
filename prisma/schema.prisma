@@ -1,0 +1,52 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL") }
+
+enum Role { CUSTOMER MERCHANT ADMIN }
+enum ApprovalStatus { PENDING APPROVED REJECTED }
+enum OrderStatus { PLACED CONFIRMED SHIPPED DELIVERED CANCELLED RETURNED }
+enum PaymentMethod { UPI CARD NETBANKING WALLET COD }
+enum PaymentStatus { PENDING PAID FAILED REFUNDED }
+
+model User { id String @id @default(cuid()); email String @unique; phone String? @unique
+  passwordHash String; name String; role Role @default(CUSTOMER); createdAt DateTime @default(now())
+  merchant Merchant?; addresses Address[]; orders Order[]; reviews Review[]; wishlist WishlistItem[] }
+
+model Address { id String @id @default(cuid()); userId String; user User @relation(fields:[userId],references:[id])
+  line1 String; city String; state String; pincode String; phone String }
+
+model Merchant { id String @id @default(cuid()); userId String @unique; user User @relation(fields:[userId],references:[id])
+  businessName String; slug String @unique; gstin String?; pan String; bankAccountEnc String
+  category String; status ApprovalStatus @default(PENDING); commissionPct Decimal? @db.Decimal(5,2)
+  isFirstParty Boolean @default(false)   // true only for SWAAD ROOTS (owner-managed, separate accounting)
+  products Product[]; subOrders SubOrder[]; payouts Payout[] }
+
+model Category { id String @id @default(cuid()); name String; slug String @unique
+  parentId String?; parent Category? @relation("Tree",fields:[parentId],references:[id]); children Category[] @relation("Tree")
+  commissionPct Decimal? @db.Decimal(5,2); products Product[] }
+
+model Product { id String @id @default(cuid()); merchantId String; merchant Merchant @relation(fields:[merchantId],references:[id])
+  categoryId String; category Category @relation(fields:[categoryId],references:[id])
+  title String; slug String @unique; description String; mrpPaise Int; pricePaise Int; stock Int @default(0)
+  images String[]; specs Json?; status ApprovalStatus @default(PENDING); createdAt DateTime @default(now())
+  reviews Review[]; items OrderItem[]; wishlist WishlistItem[]
+  @@index([categoryId]) @@index([merchantId]) }
+
+model Review { id String @id @default(cuid()); productId String; product Product @relation(fields:[productId],references:[id])
+  userId String; user User @relation(fields:[userId],references:[id]); rating Int; body String? }
+
+model WishlistItem { userId String; productId String; user User @relation(fields:[userId],references:[id]); product Product @relation(fields:[productId],references:[id]); @@id([userId,productId]) }
+
+model Order { id String @id @default(cuid()); userId String; user User @relation(fields:[userId],references:[id])
+  totalPaise Int; paymentMethod PaymentMethod; paymentStatus PaymentStatus @default(PENDING)
+  razorpayOrderId String? @unique; createdAt DateTime @default(now()); subOrders SubOrder[] }
+
+model SubOrder { id String @id @default(cuid()); orderId String; order Order @relation(fields:[orderId],references:[id])
+  merchantId String; merchant Merchant @relation(fields:[merchantId],references:[id])
+  status OrderStatus @default(PLACED); subtotalPaise Int; commissionPaise Int; payoutPaise Int
+  items OrderItem[] }
+
+model OrderItem { id String @id @default(cuid()); subOrderId String; subOrder SubOrder @relation(fields:[subOrderId],references:[id])
+  productId String; product Product @relation(fields:[productId],references:[id]); qty Int; unitPaise Int }
+
+model Payout { id String @id @default(cuid()); merchantId String; merchant Merchant @relation(fields:[merchantId],references:[id])
+  amountPaise Int; paidAt DateTime? }
